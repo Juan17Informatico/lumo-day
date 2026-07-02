@@ -1,72 +1,109 @@
-import { useCallback, useEffect } from "react";
-import { ActivityIndicator, FlatList, Text, View } from "react-native";
-import { Calendar } from "react-native-calendars";
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import { useEffect, useState } from "react";
+import { Pressable, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import type { DateData } from "react-native-calendars";
 
-import { getEventsByDate } from "@/lib/db";
+import { MonthCalendar } from "@/components/calendar/MonthCalendar";
+import { LoadingScreen } from "@/components/ui/LoadingScreen";
+import { colors } from "@/lib/constants/theme";
 import { useAppStore } from "@/lib/stores/app-store";
+import { useNotesStore } from "@/lib/stores/notes.store";
+import { getMonthRange } from "@/lib/utils/dates";
 
 export default function CalendarScreen() {
+  const router = useRouter();
   const dbReady = useAppStore((s) => s.dbReady);
   const selectedDate = useAppStore((s) => s.selectedDate);
-  const events = useAppStore((s) => s.events);
   const setSelectedDate = useAppStore((s) => s.setSelectedDate);
-  const setEvents = useAppStore((s) => s.setEvents);
+  const monthSummaries = useNotesStore((s) => s.monthSummaries);
+  const loadMonth = useNotesStore((s) => s.loadMonth);
 
-  const loadEvents = useCallback(async () => {
-    const rows = await getEventsByDate(selectedDate);
-    setEvents(rows);
-  }, [selectedDate, setEvents]);
+  const [visibleMonth, setVisibleMonth] = useState(() => {
+    const [y, m] = selectedDate.split("-").map(Number);
+    return { year: y, month: m };
+  });
+
+  const handleDayPress = (day: DateData) => {
+    setSelectedDate(day.dateString);
+    router.push({ pathname: "/day/[date]", params: { date: day.dateString } });
+  };
+
+  const handleMonthChange = (month: { year: number; month: number }) => {
+    setVisibleMonth(month);
+  };
 
   useEffect(() => {
     if (dbReady) {
-      loadEvents();
+      const { start, end } = getMonthRange(
+        visibleMonth.year,
+        visibleMonth.month,
+      );
+      loadMonth(start, end);
     }
-  }, [dbReady, loadEvents]);
+  }, [visibleMonth, dbReady, loadMonth]);
 
   if (!dbReady) {
-    return (
-      <View className="flex-1 items-center justify-center bg-white">
-        <ActivityIndicator size="large" color="#2563eb" />
-        <Text className="mt-3 text-slate-500">Inicializando base de datos...</Text>
-      </View>
-    );
+    return <LoadingScreen message="Preparando tu diario..." />;
   }
 
+  const todayNotes = monthSummaries.find((s) => s.date === selectedDate);
+
   return (
-    <View className="flex-1 bg-white">
-      <Calendar
+    <SafeAreaView className="flex-1 bg-lumo-bg" edges={["bottom"]}>
+      <View className="px-5 pb-2 pt-2">
+        <Text className="font-inter text-sm text-lumo-subtext">
+          Tu espacio de reflexión
+        </Text>
+        <Text className="font-inter-semibold text-2xl text-lumo-text">
+          Calendario
+        </Text>
+      </View>
+
+      <MonthCalendar
         current={selectedDate}
-        onDayPress={(day) => setSelectedDate(day.dateString)}
-        markedDates={{
-          [selectedDate]: { selected: true, selectedColor: "#2563eb" },
-        }}
-        theme={{
-          todayTextColor: "#2563eb",
-          arrowColor: "#2563eb",
-        }}
+        selectedDate={selectedDate}
+        summaries={monthSummaries}
+        onDayPress={handleDayPress}
+        onMonthChange={handleMonthChange}
       />
 
-      <View className="flex-1 border-t border-slate-200 px-4 pt-4">
-        <Text className="mb-3 text-base font-semibold text-slate-800">
-          Eventos del {selectedDate}
-        </Text>
-
-        {events.length === 0 ? (
-          <Text className="text-slate-500">
-            No hay eventos. Agrega uno desde Ajustes.
+      <View className="mx-5 mt-4 flex-row items-center justify-between rounded-2xl border border-lumo-border bg-lumo-surface px-4 py-3">
+        <View>
+          <Text className="font-inter-medium text-sm text-lumo-text">
+            {selectedDate}
           </Text>
-        ) : (
-          <FlatList
-            data={events}
-            keyExtractor={(item) => String(item.id)}
-            renderItem={({ item }) => (
-              <View className="mb-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                <Text className="font-medium text-slate-800">{item.title}</Text>
-              </View>
-            )}
-          />
-        )}
+          <Text className="font-inter text-xs text-lumo-subtext">
+            {todayNotes
+              ? `${todayNotes.noteCount} entrada${todayNotes.noteCount !== 1 ? "s" : ""}`
+              : "Sin entradas"}
+          </Text>
+        </View>
+
+        <Pressable
+          onPress={() =>
+            router.push({ pathname: "/day/[date]", params: { date: selectedDate } })
+          }
+          className="flex-row items-center rounded-xl px-3 py-2"
+          style={{ backgroundColor: `${colors.primary}15` }}
+        >
+          <Text className="mr-1 font-inter-medium text-sm text-lumo-primary">
+            Ver día
+          </Text>
+          <Ionicons name="arrow-forward" size={16} color={colors.primary} />
+        </Pressable>
       </View>
-    </View>
+
+      <Pressable
+        onPress={() =>
+          router.push({ pathname: "/note/new", params: { date: selectedDate } })
+        }
+        className="absolute bottom-6 right-6 h-14 w-14 items-center justify-center rounded-full shadow-lg"
+        style={{ backgroundColor: colors.primary }}
+      >
+        <Ionicons name="add" size={28} color="#FFFFFF" />
+      </Pressable>
+    </SafeAreaView>
   );
 }
